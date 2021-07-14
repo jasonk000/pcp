@@ -288,13 +288,17 @@ bpf_load_config(char* filename)
     FILE *config_file;
     char line[256];
     unsigned int module_num;
+    int found;
 
     struct config config;
     config.module_count = 0;
 
     config_file = fopen(filename, "r");
     while (!feof(config_file)) {
-        fscanf(config_file, "%s", line);
+        found = fscanf(config_file, "%s", line);
+        if (found == 0)
+            continue;
+
         pmNotifyErr(LOG_ERR, "config line = %s", line);
         if (line[strlen(line)-1] == '\n') {
             line[strlen(line)-1] = '\0';
@@ -309,7 +313,10 @@ bpf_load_config(char* filename)
     fseek(config_file, 0, SEEK_SET);
     module_num = 0;
     while (!feof(config_file)) {
-        fscanf(config_file, "%s", line);
+        found = fscanf(config_file, "%s", line);
+        if (found == 0)
+            continue;
+
         if (line[strlen(line)-1] == '\n') {
             line[strlen(line)-1] = '\0';
         }
