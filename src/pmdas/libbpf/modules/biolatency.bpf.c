@@ -57,7 +57,7 @@ int BPF_KPROBE(blk_account_io_done, struct request *req)
     if (delta < 0) {
         return 0;
     }
-    delta /= 1000;  // usec
+    delta /= 1000;  // convert ns to usec
 
     // store as histogram
     slot = bpf_log2l(delta / 1000);

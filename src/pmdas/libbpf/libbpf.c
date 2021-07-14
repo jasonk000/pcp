@@ -18,27 +18,12 @@
 #include <pcp/pmapi.h>
 #include <pcp/pmda.h>
 #include "domain.h"
+#include "modules/module.h"
 #include <sys/stat.h>
 #include <sys/resource.h>
 #include <bpf/libbpf.h>
 #include <bpf/bpf.h>
-#include <math.h>
-
-/*
- * list of instances
- */
-
-#define NUM_LATENCY_SLOTS 64
-static pmdaInstid latency[NUM_LATENCY_SLOTS];
-
-/*
- * instance domains
- */
-
-#define LATENCY_INDOM 0
-static pmdaIndom indomtab[] = {
-    { LATENCY_INDOM, sizeof(latency)/sizeof(latency[0]), latency }
-};
+#include <dlfcn.h>
 
 /*
  * All metrics supported in this PMDA - one table entry for each.
@@ -49,34 +34,19 @@ static pmdaIndom indomtab[] = {
  * (i.e. in indomtab, above).
  */
 
-static pmdaMetric metrictab[] = {
-    { /* m_user */ NULL,
-        { /* m_desc */
-            PMDA_PMID(0, 0),
-            PM_TYPE_U64,
-            LATENCY_INDOM,
-            PM_SEM_COUNTER,
-            PMDA_PMUNITS(0, 1, 0, 0, PM_TIME_NSEC, 0)
-        }
-    },
-    { /* m_user */ NULL,
-        { /* m_desc */
-            PMDA_PMID(1, 1),
-            PM_TYPE_U64,
-            LATENCY_INDOM,
-            PM_SEM_COUNTER,
-            PMDA_PMUNITS(0, 1, 0, 0, PM_TIME_NSEC, 0)
-        }
-    }
-};
+pmdaMetric * metrictab;
+pmdaIndom * indomtab;
 
 static int	isDSO = 1;		/* =0 I am a daemon */
 static char	*username;
 
-static int runqlat_fd = 0;
-static int biolatency_fd = 0;
+static int metric_count = 0;
+static int indom_count = 0;
 
 static char	mypath[MAXPATHLEN];
+
+static module** modules;
+static int module_count;
 
 /* command line option handling - both short and long options */
 static pmLongOptions longopts[] = {
@@ -107,30 +77,17 @@ libbpf_fetchCallBack(pmdaMetric *mdesc, unsigned int inst, pmAtomValue *atom)
     unsigned int	cluster = pmID_cluster(mdesc->m_desc.pmid);
     unsigned int	item = pmID_item(mdesc->m_desc.pmid);
 
-    if (inst == PM_IN_NULL)
-        return PM_ERR_INST;
-
-    if (cluster == 0 && item == 0) {
-        unsigned long map_key = inst;
-        unsigned long value = 0;
-        int ret = bpf_map_lookup_elem(runqlat_fd, &map_key, &value);
-        if (ret == -1) {
-            return PMDA_FETCH_NOVALUES;
+    for (int i = 0; i < module_count; i++) {
+        if (modules[i]->cluster() == cluster) {
+            return modules[cluster]->fetch_to_atom(item, inst, atom);        
         }
-        atom->ull = value;
-    } else if (cluster == 1 && item == 1) {
-        unsigned long map_key = inst;
-        unsigned long value = 0;
-        int ret = bpf_map_lookup_elem(biolatency_fd, &map_key, &value);
-        if (ret == -1) {
-            return PMDA_FETCH_NOVALUES;
-        }
-        atom->ull = value;
-    } else {
-        return PM_ERR_PMID;
     }
-
-    return PMDA_FETCH_STATIC;
+ 
+    // A module should have picked up the cluster, based on pmns, even
+    // if it responded with PMDA_FETCH_NOVALUES indicating no values available
+    // for the metric. So, if we have made it here, we've been passed a cluster
+    // that we do not know how to handle. Could be a pmns vs module config issue.
+    return PM_ERR_PMID;
 }
 
 int libbpf_printfn(enum libbpf_print_level level, const char *out, va_list ap)
@@ -176,99 +133,124 @@ void libbpf_setrlimit()
     }
 }
 
-void
-libbpf_bootbpf()
+module* libbpf_load_module(char * name)
 {
-    struct bpf_object *bpf_obj;
-    const char *name;
+    module *loaded_module = NULL;
+    module *(*load_module_fn)();
+    char *fullpath;
+    char *error;
+
+    int ret;
+    ret = asprintf(&fullpath, "/var/lib/pcp/pmdas/libbpf/modules/%s.so", name);
+    if (ret < 0) {
+        pmNotifyErr(LOG_ERR, "could not construct log string?");
+        return NULL;
+    }
+
+    pmNotifyErr(LOG_INFO, "loading: %s from %s", name, fullpath);
+
+    void * dl_module = NULL;
+    dl_module = dlopen(fullpath, RTLD_NOW);
+    if (!dl_module) {
+        error = dlerror();
+        pmNotifyErr(LOG_INFO, "dlopen failed: %s, %s", fullpath, error);
+        goto cleanup;
+    }
+
+    load_module_fn = dlsym(dl_module, "load_module");
+    if ((error = dlerror()) != NULL) {
+        pmNotifyErr(LOG_ERR, "dlsym failed: %s, %s", fullpath, error);
+    } else {
+        loaded_module = (*load_module_fn)();
+    }
+
+cleanup:
+    free(fullpath);
+    return loaded_module;
+}
+
+void
+libbpf_load_modules()
+{
+    module_count = sizeof(all_modules)/sizeof(all_modules[0]);
+    modules = (module**) malloc(2 * sizeof(module*));
+    for(int i = 0; i < module_count; i++) {
+        modules[i] = libbpf_load_module(all_modules[i]);
+    }
+}
+
+void
+libbpf_register_modules()
+{
+    // identify how much space we need and set up metric table area
+    int total_metrics = 0;
+    int total_indoms = 0;
+    for(int i = 0; i < module_count; i++) {
+        total_metrics += modules[i]->metric_count();
+        total_indoms += modules[i]->indom_count();
+    }
+    metrictab = (pmdaMetric*) malloc(total_metrics * sizeof(pmdaMetric));
+    indomtab = (pmdaIndom*) malloc(total_indoms * sizeof(pmdaIndom));
+
+    // each module needs to set up its tables, starting at the next available slot
+    int current_metric = 0;
+    int current_indom = 0;
+    for(int i = 0; i < module_count; i++) {
+        pmNotifyErr(LOG_INFO, "registering: %s", modules[i]->module_name());
+        modules[i]->register_metrics(&metrictab[current_metric], &indomtab[current_indom]);
+
+        current_metric += modules[i]->metric_count();
+        current_indom += modules[i]->indom_count();
+    }
+
+    metric_count = current_metric;
+    indom_count = current_indom;
+}
+
+void
+libbpf_init_modules(unsigned int module_names_count, char** module_names)
+{
     int ret;
     char errorstring[1024];
-    struct bpf_program *bpfprg;
 
-    libbpf_setrlimit();
-    libbpf_set_print(libbpf_printfn);
+    for(int i = 0; i < module_count; i++) {
+        bool found = false;
+        char *name = modules[i]->module_name();
 
-    // runqlat
+        for(int j = 0; j < module_names_count; j++) {
+            if (strcmp(name, module_names[j]) == 0) {
+                found = true;
+            }
+        }
 
-    bpf_obj = bpf_object__open("/var/lib/pcp/pmdas/libbpf/modules/runqlat.o");
-    name = bpf_object__name(bpf_obj);
-    pmNotifyErr(LOG_INFO, "booting: %s", name);
+        if (!found)
+            continue;
 
-    bpfprg = bpf_program__next(NULL, bpf_obj);
-    while (bpfprg != NULL)
-    {
-        bpf_program__set_type(bpfprg, BPF_PROG_TYPE_KPROBE);
-        bpf_program__set_expected_attach_type(bpfprg, MAX_BPF_ATTACH_TYPE);
-        bpfprg = bpf_program__next(bpfprg, bpf_obj);
+        pmNotifyErr(LOG_INFO, "booting: %s", modules[i]->module_name());
+        ret = modules[i]->init();
+        if (ret != 0) {
+            libbpf_strerror(ret, errorstring, 1023);
+            pmNotifyErr(LOG_ERR, "module initialization failed: %d, %s", ret, errorstring);
+            modules[i] = NULL;
+            continue;
+        }
+
+        pmNotifyErr(LOG_INFO, "module initialized");
+    }
+}
+
+int
+libbpf_fetch(int numpmid, pmID pmidlist[], pmResult **resp, pmdaExt *pmda)
+{
+    for(int i = 0; i < numpmid; i++) {
+        unsigned int cluster = pmID_cluster(pmidlist[i]);
+        unsigned int item = pmID_item(pmidlist[i]);
+        if (cluster >= 0 && cluster < module_count && modules[cluster] != NULL) {
+            modules[cluster]->refresh(item);
+        }
     }
 
-    ret = bpf_object__load(bpf_obj);
-    if (ret == 0) {
-        pmNotifyErr(LOG_INFO, "bpf loaded");
-    } else {
-        libbpf_strerror(ret, errorstring, 1023);
-        pmNotifyErr(LOG_ERR, "bpf load failed: %d, %s", ret, errorstring);
-        return;
-    }
-
-    runqlat_fd = bpf_object__find_map_fd_by_name(bpf_obj, "latencies");
-    if (runqlat_fd >= 0) {
-        pmNotifyErr(LOG_INFO, "opened latencies map, fd: %d", runqlat_fd);
-    } else {
-        libbpf_strerror(ret, errorstring, 1023);
-        pmNotifyErr(LOG_ERR, "bpf map open failed: %d, %s", ret, errorstring);
-        return;
-    }
-
-    pmNotifyErr(LOG_INFO, "attaching bpf programs");
-    bpfprg = bpf_program__next(NULL, bpf_obj);
-    while (bpfprg != NULL)
-    {
-        bpf_program__attach(bpfprg);
-        bpfprg = bpf_program__next(bpfprg, bpf_obj);
-    }
-    pmNotifyErr(LOG_INFO, "attached!");
-
-    // biolatency
-
-    bpf_obj = bpf_object__open("/var/lib/pcp/pmdas/libbpf/modules/biolatency.o");
-    name = bpf_object__name(bpf_obj);
-    pmNotifyErr(LOG_INFO, "booting: %s", name);
-
-    bpfprg = bpf_program__next(NULL, bpf_obj);
-    while (bpfprg != NULL)
-    {
-        bpf_program__set_type(bpfprg, BPF_PROG_TYPE_KPROBE);
-        bpf_program__set_expected_attach_type(bpfprg, MAX_BPF_ATTACH_TYPE);
-        bpfprg = bpf_program__next(bpfprg, bpf_obj);
-    }
-
-    ret = bpf_object__load(bpf_obj);
-    if (ret == 0) {
-        pmNotifyErr(LOG_INFO, "bpf loaded");
-    } else {
-        libbpf_strerror(ret, errorstring, 1023);
-        pmNotifyErr(LOG_ERR, "bpf load failed: %d, %s", ret, errorstring);
-        return;
-    }
-
-    biolatency_fd = bpf_object__find_map_fd_by_name(bpf_obj, "latencies");
-    if (biolatency_fd >= 0) {
-        pmNotifyErr(LOG_INFO, "opened latencies map, fd: %d", biolatency_fd);
-    } else {
-        libbpf_strerror(ret, errorstring, 1023);
-        pmNotifyErr(LOG_ERR, "bpf map open failed: %d, %s", ret, errorstring);
-        return;
-    }
-
-    pmNotifyErr(LOG_INFO, "attaching bpf programs");
-    bpfprg = bpf_program__next(NULL, bpf_obj);
-    while (bpfprg != NULL)
-    {
-        bpf_program__attach(bpfprg);
-        bpfprg = bpf_program__next(bpfprg, bpf_obj);
-    }
-    pmNotifyErr(LOG_INFO, "attached!");
+    return pmdaFetch(numpmid, pmidlist, resp, pmda);
 }
 
 /*
@@ -279,34 +261,27 @@ libbpf_init(pmdaInterface *dp)
 {
     if (isDSO) {
         int sep = pmPathSeparator();
-        pmsprintf(mypath, sizeof(mypath), "%s%c" "simple" "%c" "help",
+        pmsprintf(mypath, sizeof(mypath), "%s%c" "libbpf" "%c" "help",
             pmGetConfig("PCP_PMDAS_DIR"), sep, sep);
-        pmdaDSO(dp, PMDA_INTERFACE_7, "simple DSO", mypath);
+        pmdaDSO(dp, PMDA_INTERFACE_7, "libbpf", mypath);
     }
 
     if (dp->status != 0)
         return;
 
-    libbpf_bootbpf();
+    libbpf_setrlimit();
+    libbpf_set_print(libbpf_printfn);
+
+    libbpf_load_modules();
+    libbpf_register_modules();
+
+    // TODO module configuration
+    libbpf_init_modules(sizeof(modules_to_load)/sizeof(modules_to_load[0]), modules_to_load);
 
     pmdaSetFetchCallBack(dp, libbpf_fetchCallBack);
+    dp->version.any.fetch = libbpf_fetch;
 
-    pmdaInit(dp, indomtab, sizeof(indomtab)/sizeof(indomtab[0]), metrictab,
-         sizeof(metrictab)/sizeof(metrictab[0]));
-}
-
-void fill_metadata()
-{
-    for(int i = 0; i < NUM_LATENCY_SLOTS; i++) {
-        char *string;
-        int lower = round(pow(2, i));
-        int upper = round(pow(2, i+1));
-        int ret = asprintf(&string, "%d-%d", lower, upper);
-        if (ret > 0) {
-            latency[i].i_inst = i;
-            latency[i].i_name = string;
-        }
-    }
+    pmdaInit(dp, indomtab, indom_count, metrictab, metric_count);
 }
 
 /*
@@ -315,19 +290,15 @@ void fill_metadata()
 int
 main(int argc, char **argv)
 {
-    fill_metadata();
-
-    int			sep = pmPathSeparator();
-    pmdaInterface	dispatch;
+    int sep = pmPathSeparator();
+    pmdaInterface dispatch;
 
     isDSO = 0;
     pmSetProgname(argv[0]);
     pmGetUsername(&username);
 
-    pmsprintf(mypath, sizeof(mypath), "%s%c" "libbpf" "%c" "help",
-        pmGetConfig("PCP_PMDAS_DIR"), sep, sep);
-    pmdaDaemon(&dispatch, PMDA_INTERFACE_7, pmGetProgname(), LIBBPF,
-        "libbpf.log", mypath);
+    pmsprintf(mypath, sizeof(mypath), "%s%c" "libbpf" "%c" "help", pmGetConfig("PCP_PMDAS_DIR"), sep, sep);
+    pmdaDaemon(&dispatch, PMDA_INTERFACE_7, pmGetProgname(), LIBBPF, "libbpf.log", mypath);
 
     pmdaGetOptions(argc, argv, &opts, &dispatch);
     if (opts.errors) {

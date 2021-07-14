@@ -1,0 +1,2 @@
+@ libbpf.runq.latency CPU run queue latency (nanos)
+@ libbpf.disk.all.latency disk block io latency (micros)

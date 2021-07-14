@@ -1,26 +1,18 @@
+TOPDIR = ../../../..
+include $(TOPDIR)/src/include/builddefs
+
 LIBBPF_PATH = /home/jkoch/code/libbpf/src
 
-CFILES	= libbpf.c
-CMDTARGET = pmdalibbpf$(EXECSUFFIX)
-# LIBTARGET = pmda_libbpf.$(DSOSUFFIX)
-LLDLIBS = $(PCP_PMDALIB) $(LIBBPF_PATH)/libbpf.a -lelf -lz -lm
-LCFLAGS = -I.
-CONFIG	= libbpf.conf
-DFILES	= README help
+default:	runqlat.so biolatency.so runqlat.bpf.o biolatency.bpf.o 
 
-IAM	= libbpf
-DOMAIN	= LIBBPF
+runqlat.bpf.o:
+	clang-11 -I$(LIBBPF_PATH) -emit-llvm -O2 -g -c runqlat.bpf.c -o - | llc-11 -march=bpf -filetype=obj -o runqlat.bpf.o
 
-PMDATMPDIR = $(PCP_PMDAS_DIR)/$(IAM)
-PMDACONFIG = $(PCP_SYSCONF_DIR)/$(IAM)
-PMDAADMDIR = $(PCP_PMDASADM_DIR)/$(IAM)
+biolatency.bpf.o:
+	clang-11 -I$(LIBBPF_PATH) -emit-llvm -O2 -g -c biolatency.bpf.c -o - | llc-11 -march=bpf -filetype=obj -o biolatency.bpf.o
 
-LDIRT	= domain.h *.o $(IAM).log pmda$(IAM) pmda_$(IAM).$(DSOSUFFIX) runqlat.o
+runqlat.so: runqlat.o module_helpers.o
+	$(LINK.c) -lbpf -shared $^ -o $@
 
-default:	runqlat.o biolatency.o $(_FORCE)
-
-runqlat.o: $(_FORCE)
-	clang-10 -I$(LIBBPF_PATH) -emit-llvm -O2 -g -c runqlat.bpf.c -o - | llc-10 -march=bpf -filetype=obj -o runqlat.o
-
-biolatency.o: $(_FORCE)
-	clang-10 -I$(LIBBPF_PATH) -emit-llvm -O2 -g -c biolatency.bpf.c -o - | llc-10 -march=bpf -filetype=obj -o biolatency.o
+biolatency.so: biolatency.o module_helpers.o
+	$(LINK.c) -lbpf -shared $^ -o $@

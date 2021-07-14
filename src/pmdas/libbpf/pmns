@@ -16,5 +16,5 @@ libbpf.disk {
 }
 
 libbpf.disk.all {
-    latency	LIBBPF:1:1
+    latency	LIBBPF:1:0
 }

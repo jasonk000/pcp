@@ -6,7 +6,7 @@ LIBBPF_PATH = /home/jkoch/code/libbpf/src
 CFILES	= libbpf.c
 CMDTARGET = pmdalibbpf$(EXECSUFFIX)
 # LIBTARGET = pmda_libbpf.$(DSOSUFFIX)
-LLDLIBS = $(PCP_PMDALIB) $(LIBBPF_PATH)/libbpf.a -lelf -lz -lm
+LLDLIBS = $(PCP_PMDALIB) -lbpf -lelf -lz -lm -ldl
 LCFLAGS = -I.
 CONFIG	= libbpf.conf
 DFILES	= README help
@@ -18,7 +18,7 @@ PMDATMPDIR = $(PCP_PMDAS_DIR)/$(IAM)
 PMDACONFIG = $(PCP_SYSCONF_DIR)/$(IAM)
 PMDAADMDIR = $(PCP_PMDASADM_DIR)/$(IAM)
 
-LDIRT	= domain.h *.o $(IAM).log pmda$(IAM) pmda_$(IAM).$(DSOSUFFIX) runqlat.o
+LDIRT	= domain.h *.o $(IAM).log pmda$(IAM) pmda_$(IAM).$(DSOSUFFIX)
 
 default_pcp default:	$(CMDTARGET) $(LIBTARGET) $(_FORCE)
 
