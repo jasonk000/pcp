@@ -15,10 +15,13 @@ Comparison to other PCP PMDAS
 - pmdabpftrace can load and run arbitrary bpftrace code, so it is very flexible, however it does this by shelling
   out to bpftrace executable which again requires quite a lot of memory.
 
-Configuration
-=============
+Deployment
+==========
 
 The file `bpf.conf` lists modules, one per line, that will be started.
+
+A relatively new version of libbpf is required on the system. libbpf 0.1.0 is unlikely to work, however, libbpf 0.4.0
+has been shown to work.
 
 Development
 ===========
