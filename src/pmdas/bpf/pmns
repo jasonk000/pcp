@@ -1,0 +1,20 @@
+#ifndef BPF
+#define BPF 153
+#endif
+
+bpf {
+    runq
+    disk
+}
+
+bpf.runq {
+    latency	BPF:0:0
+}
+
+bpf.disk {
+    all
+}
+
+bpf.disk.all {
+    latency	BPF:1:0
+}

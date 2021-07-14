@@ -28,19 +28,29 @@ typedef struct {
 } module;
 
 /*
- * instance domains
+ * instance domains, need to be unique
+ * a single module could use more instance domains, in which case list them all with unique numbers
  */
 #define RUNQLAT_INDOM 0
 #define BIOLATENCY_INDOM 1
 
+/*
+ * the pmid cluster assigned to each module
+ */
 #define RUNQLAT_CLUSTER 0
 #define BIOLATENCY_CLUSTER 1
 
+/**
+ * list of all modules defined
+ */
 char *all_modules[] = {
     "runqlat",
     "biolatency"
 };
 
+/**
+ * list of modules that will be loaded and served as metrics
+ */
 char *modules_to_load[] = {
     "biolatency",
     "runqlat"

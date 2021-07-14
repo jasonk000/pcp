@@ -1,4 +1,4 @@
 /*
  * built from ../../pmns/stdpmid
  */
-#define LIBBPF 156
+#define BPF 156

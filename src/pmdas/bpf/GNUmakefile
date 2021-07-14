@@ -1,18 +1,16 @@
 TOPDIR = ../../..
 include $(TOPDIR)/src/include/builddefs
 
-LIBBPF_PATH = /home/jkoch/code/libbpf/src
-
-CFILES	= libbpf.c
-CMDTARGET = pmdalibbpf$(EXECSUFFIX)
-# LIBTARGET = pmda_libbpf.$(DSOSUFFIX)
+CFILES	= bpf.c
+CMDTARGET = pmdabpf$(EXECSUFFIX)
+# LIBTARGET = pmda_bpf.$(DSOSUFFIX)
 LLDLIBS = $(PCP_PMDALIB) -lbpf -lelf -lz -lm -ldl
 LCFLAGS = -I.
-CONFIG	= libbpf.conf
+CONFIG	= bpf.conf
 DFILES	= README help
 
-IAM	= libbpf
-DOMAIN	= LIBBPF
+IAM	= bpf
+DOMAIN	= BPF
 
 PMDATMPDIR = $(PCP_PMDAS_DIR)/$(IAM)
 PMDACONFIG = $(PCP_SYSCONF_DIR)/$(IAM)

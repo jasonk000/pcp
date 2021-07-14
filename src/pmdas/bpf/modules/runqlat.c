@@ -15,6 +15,21 @@ char * runqlat_name()
     return "runqlat";
 }
 
+int runqlat_metric_count()
+{
+    return 1;
+}
+
+int runqlat_indom_count()
+{
+    return 1;
+}
+
+int runqlat_cluster()
+{
+    return RUNQLAT_CLUSTER;
+}
+
 void runqlat_register(pmdaMetric *metrics, pmdaIndom *indoms)
 {
     // must match PMNS
@@ -45,8 +60,16 @@ int runqlat_init()
     struct bpf_program *bpfprg;
     const char *name;
     int ret;
+    char *bpf_path;
 
-    bpf_obj = bpf_object__open("/var/lib/pcp/pmdas/libbpf/modules/runqlat.bpf.o");
+    ret = asprintf(&bpf_path, "%s/bpf/modules/runqlat.bpf.o", pmGetConfig("PCP_PMDAS_DIR"));
+    if (ret <= 0) {
+        pmNotifyErr(LOG_ERR, "could not construct bpf module path");
+        return ret;
+    }
+
+    bpf_obj = bpf_object__open(bpf_path);
+    free(bpf_path);
     name = bpf_object__name(bpf_obj);
     pmNotifyErr(LOG_INFO, "booting: %s", name);
 
@@ -80,21 +103,6 @@ int runqlat_init()
     fill_instids_log2(NUM_LATENCY_SLOTS, runqlat_instances);
 
     return 0;
-}
-
-int runqlat_metric_count()
-{
-    return 1;
-}
-
-int runqlat_indom_count()
-{
-    return 1;
-}
-
-int runqlat_cluster()
-{
-    return RUNQLAT_CLUSTER;
 }
 
 int runqlat_shutdown()

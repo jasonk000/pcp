@@ -1,8 +1,7 @@
 /*
- * Simple, configurable PMDA
+ * BPF wrapper metric module.
  *
- * Copyright (c) 2012-2014,2017 Red Hat.
- * Copyright (c) 1995,2004 Silicon Graphics, Inc.  All Rights Reserved.
+ * Copyright (c) 2021 Netflix, Inc.
  * 
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -24,15 +23,6 @@
 #include <bpf/libbpf.h>
 #include <bpf/bpf.h>
 #include <dlfcn.h>
-
-/*
- * All metrics supported in this PMDA - one table entry for each.
- * The 4th field specifies the serial number of the instance domain
- * for the metric, and must be either PM_INDOM_NULL (denoting a
- * metric that only ever has a single value), or the serial number
- * of one of the instance domains declared in the instance domain table
- * (i.e. in indomtab, above).
- */
 
 pmdaMetric * metrictab;
 pmdaIndom * indomtab;
@@ -72,7 +62,7 @@ static pmdaOptions opts = {
  * callback provided to pmdaFetch
  */
 static int
-libbpf_fetchCallBack(pmdaMetric *mdesc, unsigned int inst, pmAtomValue *atom)
+bpf_fetchCallBack(pmdaMetric *mdesc, unsigned int inst, pmAtomValue *atom)
 {
     unsigned int	cluster = pmID_cluster(mdesc->m_desc.pmid);
     unsigned int	item = pmID_item(mdesc->m_desc.pmid);
@@ -90,7 +80,7 @@ libbpf_fetchCallBack(pmdaMetric *mdesc, unsigned int inst, pmAtomValue *atom)
     return PM_ERR_PMID;
 }
 
-int libbpf_printfn(enum libbpf_print_level level, const char *out, va_list ap)
+int bpf_printfn(enum libbpf_print_level level, const char *out, va_list ap)
 {
     char logline[1024];
     vsprintf(logline, out, ap);
@@ -118,7 +108,7 @@ int libbpf_printfn(enum libbpf_print_level level, const char *out, va_list ap)
     return 0;
 }
 
-void libbpf_setrlimit()
+void bpf_setrlimit()
 {
     struct rlimit rnew = {
         .rlim_cur = 100*1024*1024,
@@ -133,7 +123,7 @@ void libbpf_setrlimit()
     }
 }
 
-module* libbpf_load_module(char * name)
+module* bpf_load_module(char * name)
 {
     module *loaded_module = NULL;
     module *(*load_module_fn)();
@@ -141,7 +131,7 @@ module* libbpf_load_module(char * name)
     char *error;
 
     int ret;
-    ret = asprintf(&fullpath, "/var/lib/pcp/pmdas/libbpf/modules/%s.so", name);
+    ret = asprintf(&fullpath, "%s/bpf/modules/%s.so", pmGetConfig("PCP_PMDAS_DIR"), name);
     if (ret < 0) {
         pmNotifyErr(LOG_ERR, "could not construct log string?");
         return NULL;
@@ -170,17 +160,17 @@ cleanup:
 }
 
 void
-libbpf_load_modules()
+bpf_load_modules()
 {
     module_count = sizeof(all_modules)/sizeof(all_modules[0]);
     modules = (module**) malloc(2 * sizeof(module*));
     for(int i = 0; i < module_count; i++) {
-        modules[i] = libbpf_load_module(all_modules[i]);
+        modules[i] = bpf_load_module(all_modules[i]);
     }
 }
 
 void
-libbpf_register_modules()
+bpf_register_modules()
 {
     // identify how much space we need and set up metric table area
     int total_metrics = 0;
@@ -208,7 +198,7 @@ libbpf_register_modules()
 }
 
 void
-libbpf_init_modules(unsigned int module_names_count, char** module_names)
+bpf_init_modules(unsigned int module_names_count, char** module_names)
 {
     int ret;
     char errorstring[1024];
@@ -240,7 +230,7 @@ libbpf_init_modules(unsigned int module_names_count, char** module_names)
 }
 
 int
-libbpf_fetch(int numpmid, pmID pmidlist[], pmResult **resp, pmdaExt *pmda)
+bpf_fetch(int numpmid, pmID pmidlist[], pmResult **resp, pmdaExt *pmda)
 {
     for(int i = 0; i < numpmid; i++) {
         unsigned int cluster = pmID_cluster(pmidlist[i]);
@@ -257,29 +247,29 @@ libbpf_fetch(int numpmid, pmID pmidlist[], pmResult **resp, pmdaExt *pmda)
  * Initialise the agent (both daemon and DSO).
  */
 void 
-libbpf_init(pmdaInterface *dp)
+bpf_init(pmdaInterface *dp)
 {
     if (isDSO) {
         int sep = pmPathSeparator();
-        pmsprintf(mypath, sizeof(mypath), "%s%c" "libbpf" "%c" "help",
+        pmsprintf(mypath, sizeof(mypath), "%s%c" "bpf" "%c" "help",
             pmGetConfig("PCP_PMDAS_DIR"), sep, sep);
-        pmdaDSO(dp, PMDA_INTERFACE_7, "libbpf", mypath);
+        pmdaDSO(dp, PMDA_INTERFACE_7, "bpf", mypath);
     }
 
     if (dp->status != 0)
         return;
 
-    libbpf_setrlimit();
-    libbpf_set_print(libbpf_printfn);
+    bpf_setrlimit();
+    libbpf_set_print(bpf_printfn);
 
-    libbpf_load_modules();
-    libbpf_register_modules();
+    bpf_load_modules();
+    bpf_register_modules();
 
     // TODO module configuration
-    libbpf_init_modules(sizeof(modules_to_load)/sizeof(modules_to_load[0]), modules_to_load);
+    bpf_init_modules(sizeof(modules_to_load)/sizeof(modules_to_load[0]), modules_to_load);
 
-    pmdaSetFetchCallBack(dp, libbpf_fetchCallBack);
-    dp->version.any.fetch = libbpf_fetch;
+    pmdaSetFetchCallBack(dp, bpf_fetchCallBack);
+    dp->version.any.fetch = bpf_fetch;
 
     pmdaInit(dp, indomtab, indom_count, metrictab, metric_count);
 }
@@ -297,8 +287,8 @@ main(int argc, char **argv)
     pmSetProgname(argv[0]);
     pmGetUsername(&username);
 
-    pmsprintf(mypath, sizeof(mypath), "%s%c" "libbpf" "%c" "help", pmGetConfig("PCP_PMDAS_DIR"), sep, sep);
-    pmdaDaemon(&dispatch, PMDA_INTERFACE_7, pmGetProgname(), LIBBPF, "libbpf.log", mypath);
+    pmsprintf(mypath, sizeof(mypath), "%s%c" "bpf" "%c" "help", pmGetConfig("PCP_PMDAS_DIR"), sep, sep);
+    pmdaDaemon(&dispatch, PMDA_INTERFACE_7, pmGetProgname(), BPF, "bpf.log", mypath);
 
     pmdaGetOptions(argc, argv, &opts, &dispatch);
     if (opts.errors) {
@@ -310,7 +300,7 @@ main(int argc, char **argv)
 
     pmdaOpenLog(&dispatch);
     pmdaConnect(&dispatch);
-    libbpf_init(&dispatch);
+    bpf_init(&dispatch);
     pmdaMain(&dispatch);
 
     exit(0);

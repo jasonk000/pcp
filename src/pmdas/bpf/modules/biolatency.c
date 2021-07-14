@@ -15,6 +15,21 @@ char * biolatency_name()
     return "biolatency";
 }
 
+int biolatency_metric_count()
+{
+    return 1;
+}
+
+int biolatency_indom_count()
+{
+    return 1;
+}
+
+int biolatency_cluster()
+{
+    return BIOLATENCY_CLUSTER;
+}
+
 void biolatency_register(pmdaMetric *metrics, pmdaIndom *indoms)
 {
     // must match PMNS
@@ -45,8 +60,16 @@ int biolatency_init()
     struct bpf_program *bpfprg;
     const char *name;
     int ret;
+    char *bpf_path;
 
-    bpf_obj = bpf_object__open("/var/lib/pcp/pmdas/libbpf/modules/biolatency.bpf.o");
+    ret = asprintf(&bpf_path, "%s/bpf/modules/biolatency.bpf.o", pmGetConfig("PCP_PMDAS_DIR"));
+    if (ret <= 0) {
+        pmNotifyErr(LOG_ERR, "could not construct bpf module path");
+        return ret;
+    }
+
+    bpf_obj = bpf_object__open(bpf_path);
+    free(bpf_path);
     name = bpf_object__name(bpf_obj);
     pmNotifyErr(LOG_INFO, "booting: %s", name);
 
@@ -80,21 +103,6 @@ int biolatency_init()
     fill_instids_log2(NUM_LATENCY_SLOTS, biolatency_instances);
 
     return 0;
-}
-
-int biolatency_metric_count()
-{
-    return 1;
-}
-
-int biolatency_indom_count()
-{
-    return 1;
-}
-
-int biolatency_cluster()
-{
-    return BIOLATENCY_CLUSTER;
 }
 
 int biolatency_shutdown()

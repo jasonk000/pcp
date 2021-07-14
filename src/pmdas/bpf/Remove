@@ -18,7 +18,7 @@
 . $PCP_DIR/etc/pcp.env
 . $PCP_SHARE_DIR/lib/pmdaproc.sh
 
-iam=libbpf
+iam=bpf
 perl_opt=true
 python_opt=true
 python_opt=true

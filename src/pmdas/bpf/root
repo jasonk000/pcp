@@ -4,6 +4,6 @@
 
 #include <stdpmid>
 
-root { libbpf }
+root { bpf }
 
 #include "pmns"
