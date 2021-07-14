@@ -3,7 +3,7 @@
 // Copyright 2016 Netflix, Inc.
 // Licensed under the Apache License, Version 2.0 (the "License")
 
-// relicensing w/ GPL to use GPL helpers; Netflix
+// relicensing w/ GPL to use GPL helpers (BPF_CORE_READ); Netflix
 char _license[] SEC("license") = "GPL";
 
 #define MAX_TASK_ENTRIES	10240

@@ -1,18 +1,18 @@
 TOPDIR = ../../../..
 include $(TOPDIR)/src/include/builddefs
 
-LIBBPF_PATH = /home/jkoch/code/libbpf/src
+# needs to match libbpf v0.4+
+LIBBPF_HEADERS_PATH = /home/jkoch/code/libbpf/src
 
-default:	runqlat.so biolatency.so runqlat.bpf.o biolatency.bpf.o 
+MODULES = biolatency.so runqlat.so
+BPF_MODULES = biolatency.bpf.o runqlat.bpf.o 
 
-runqlat.bpf.o:
-	clang-11 -I$(LIBBPF_PATH) -emit-llvm -O2 -g -c runqlat.bpf.c -o - | llc-11 -march=bpf -filetype=obj -o runqlat.bpf.o
+default: $(MODULES) $(BPF_MODULES)
 
-biolatency.bpf.o:
-	clang-11 -I$(LIBBPF_PATH) -emit-llvm -O2 -g -c biolatency.bpf.c -o - | llc-11 -march=bpf -filetype=obj -o biolatency.bpf.o
+# Use the clang-11 pipeline to emit LLVM to LLD and emit BPF straight to an ELF .o.
+# clang-10 also works. The GCC pipeline has parts of this but not completely
+%.bpf.o: %.bpf.c
+	clang-11 -I$(LIBBPF_HEADERS_PATH) -emit-llvm -O2 -g -c $^ -o - | llc-11 -march=bpf -filetype=obj -o $@
 
-runqlat.so: runqlat.o module_helpers.o
-	$(LINK.c) -lbpf -shared $^ -o $@
-
-biolatency.so: biolatency.o module_helpers.o
+%.so: %.o module_helpers.o
 	$(LINK.c) -lbpf -shared $^ -o $@

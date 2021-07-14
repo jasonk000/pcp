@@ -2,12 +2,12 @@
  * BPF wrapper metric module.
  *
  * Copyright (c) 2021 Netflix, Inc.
- * 
+ *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
  * Free Software Foundation; either version 2 of the License, or (at your
  * option) any later version.
- * 
+ *
  * This program is distributed in the hope that it will be useful, but
  * WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY
  * or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License
@@ -24,17 +24,16 @@
 #include <bpf/bpf.h>
 #include <dlfcn.h>
 
-pmdaMetric * metrictab;
-pmdaIndom * indomtab;
-
 static int	isDSO = 1;		/* =0 I am a daemon */
-static char	*username;
+static char	mypath[MAXPATHLEN];
 
+/* metric and indom configuration will be dynamically filled in by modules */
+static pmdaMetric * metrictab;
+static pmdaIndom * indomtab;
 static int metric_count = 0;
 static int indom_count = 0;
 
-static char	mypath[MAXPATHLEN];
-
+/* all modules collected here (whether initialised or not) */
 static module** modules;
 static int module_count;
 
@@ -44,7 +43,6 @@ static pmLongOptions longopts[] = {
     PMOPT_DEBUG,
     PMDAOPT_DOMAIN,
     PMDAOPT_LOGFILE,
-    PMDAOPT_USERNAME,
     PMOPT_HELP,
     PMDA_OPTIONS_TEXT("\nExactly one of the following options may appear:"),
     PMDAOPT_INET,
@@ -54,7 +52,7 @@ static pmLongOptions longopts[] = {
     PMDA_OPTIONS_END
 };
 static pmdaOptions opts = {
-    .short_options = "D:d:i:l:pu:U:6:?",
+    .short_options = "D:d:i:l:pu:6:?",
     .long_options = longopts,
 };
 
@@ -67,8 +65,13 @@ bpf_fetchCallBack(pmdaMetric *mdesc, unsigned int inst, pmAtomValue *atom)
     unsigned int	cluster = pmID_cluster(mdesc->m_desc.pmid);
     unsigned int	item = pmID_item(mdesc->m_desc.pmid);
 
-    for (int i = 0; i < module_count; i++) {
-        if (modules[i]->cluster() == cluster) {
+    // find module for this cluster, and issue fetch to module
+    // if somehow this bypasses PMCD PMNS filtering it is possible that
+    // a call to an uninitialised module occurs; the module is to handle this
+    for (int i = 0; i < module_count; i++)
+    {
+        if (modules[i]->cluster() == cluster)
+        {
             return modules[cluster]->fetch_to_atom(item, inst, atom);        
         }
     }
@@ -80,6 +83,9 @@ bpf_fetchCallBack(pmdaMetric *mdesc, unsigned int inst, pmAtomValue *atom)
     return PM_ERR_PMID;
 }
 
+/**
+ * wrapper for libbpf logging
+ */
 int bpf_printfn(enum libbpf_print_level level, const char *out, va_list ap)
 {
     char logline[1024];
@@ -108,6 +114,9 @@ int bpf_printfn(enum libbpf_print_level level, const char *out, va_list ap)
     return 0;
 }
 
+/**
+ * setrlimit required for BPF loading
+ */
 void bpf_setrlimit()
 {
     struct rlimit rnew = {
@@ -123,6 +132,11 @@ void bpf_setrlimit()
     }
 }
 
+/**
+ * Load a single module from modules/
+ *
+ * This will call dlopen, look up and call load_module() to load the module.
+ */
 module* bpf_load_module(char * name)
 {
     module *loaded_module = NULL;
@@ -159,6 +173,9 @@ cleanup:
     return loaded_module;
 }
 
+/**
+ * load all known modules
+ */
 void
 bpf_load_modules()
 {
@@ -169,8 +186,13 @@ bpf_load_modules()
     }
 }
 
+/**
+ * register metrics for all known modules
+ *
+ * all modules will be registered to ensure PMNS matches
+ */
 void
-bpf_register_modules()
+bpf_register_module_metrics()
 {
     // identify how much space we need and set up metric table area
     int total_metrics = 0;
@@ -197,6 +219,11 @@ bpf_register_modules()
     indom_count = current_indom;
 }
 
+/**
+ * Initialize configured modules.
+ *
+ * Perhaps only a subset of all available metrics will be initialised.
+ */
 void
 bpf_init_modules(unsigned int module_names_count, char** module_names)
 {
@@ -204,6 +231,7 @@ bpf_init_modules(unsigned int module_names_count, char** module_names)
     char errorstring[1024];
 
     for(int i = 0; i < module_count; i++) {
+        // only initialise modules that are in the subset provided
         bool found = false;
         char *name = modules[i]->module_name();
 
@@ -213,6 +241,7 @@ bpf_init_modules(unsigned int module_names_count, char** module_names)
             }
         }
 
+        // skip if not expected to be initialized
         if (!found)
             continue;
 
@@ -229,6 +258,9 @@ bpf_init_modules(unsigned int module_names_count, char** module_names)
     }
 }
 
+/**
+ * Fetch callback for pre-refresh
+ */
 int
 bpf_fetch(int numpmid, pmID pmidlist[], pmResult **resp, pmdaExt *pmda)
 {
@@ -263,7 +295,7 @@ bpf_init(pmdaInterface *dp)
     libbpf_set_print(bpf_printfn);
 
     bpf_load_modules();
-    bpf_register_modules();
+    bpf_register_module_metrics();
 
     // TODO module configuration
     bpf_init_modules(sizeof(modules_to_load)/sizeof(modules_to_load[0]), modules_to_load);
@@ -285,18 +317,17 @@ main(int argc, char **argv)
 
     isDSO = 0;
     pmSetProgname(argv[0]);
-    pmGetUsername(&username);
 
-    pmsprintf(mypath, sizeof(mypath), "%s%c" "bpf" "%c" "help", pmGetConfig("PCP_PMDAS_DIR"), sep, sep);
-    pmdaDaemon(&dispatch, PMDA_INTERFACE_7, pmGetProgname(), BPF, "bpf.log", mypath);
+    pmsprintf(mypath, sizeof(mypath), "%s%c" "bpf" "%c" "help",
+        pmGetConfig("PCP_PMDAS_DIR"), sep, sep);
+    pmdaDaemon(&dispatch, PMDA_INTERFACE_7, pmGetProgname(), BPF,
+        "bpf.log", mypath);
 
     pmdaGetOptions(argc, argv, &opts, &dispatch);
     if (opts.errors) {
         pmdaUsageMessage(&opts);
         exit(1);
     }
-    if (opts.username)
-        username = opts.username;
 
     pmdaOpenLog(&dispatch);
     pmdaConnect(&dispatch);

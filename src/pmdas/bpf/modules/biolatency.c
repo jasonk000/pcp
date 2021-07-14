@@ -34,6 +34,7 @@ void biolatency_register(pmdaMetric *metrics, pmdaIndom *indoms)
 {
     // must match PMNS
 
+	/* bpf.disk.all.latency */
     metrics[0] = (struct pmdaMetric)
         { /* m_user */ NULL,
             { /* m_desc */
@@ -95,9 +96,9 @@ int biolatency_init()
     if (biolatency_fd >= 0) {
         pmNotifyErr(LOG_INFO, "opened latencies map, fd: %d", biolatency_fd);
     } else {
-        libbpf_strerror(ret, errorstring, 1023);
-        pmNotifyErr(LOG_ERR, "bpf map open failed: %d, %s", ret, errorstring);
-        return ret;
+        libbpf_strerror(biolatency_fd, errorstring, 1023);
+        pmNotifyErr(LOG_ERR, "bpf map open failed: %d, %s", biolatency_fd, errorstring);
+        return biolatency_fd;
     }
 
     fill_instids_log2(NUM_LATENCY_SLOTS, biolatency_instances);

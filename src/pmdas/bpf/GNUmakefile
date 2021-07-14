@@ -3,7 +3,7 @@ include $(TOPDIR)/src/include/builddefs
 
 CFILES	= bpf.c
 CMDTARGET = pmdabpf$(EXECSUFFIX)
-# LIBTARGET = pmda_bpf.$(DSOSUFFIX)
+LIBTARGET = pmda_bpf.$(DSOSUFFIX)
 LLDLIBS = $(PCP_PMDALIB) -lbpf -lelf -lz -lm -ldl
 LCFLAGS = -I.
 CONFIG	= bpf.conf

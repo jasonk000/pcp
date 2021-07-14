@@ -34,6 +34,7 @@ void runqlat_register(pmdaMetric *metrics, pmdaIndom *indoms)
 {
     // must match PMNS
 
+    /* bpf.runq.latency */
     metrics[0] = (struct pmdaMetric)
         { /* m_user */ NULL,
             { /* m_desc */
@@ -95,9 +96,9 @@ int runqlat_init()
     if (runqlat_fd >= 0) {
         pmNotifyErr(LOG_INFO, "opened latencies map, fd: %d", runqlat_fd);
     } else {
-        libbpf_strerror(ret, errorstring, 1023);
-        pmNotifyErr(LOG_ERR, "bpf map open failed: %d, %s", ret, errorstring);
-        return ret;
+        libbpf_strerror(runqlat_fd, errorstring, 1023);
+        pmNotifyErr(LOG_ERR, "bpf map open failed: %d, %s", runqlat_fd, errorstring);
+        return runqlat_fd;
     }
 
     fill_instids_log2(NUM_LATENCY_SLOTS, runqlat_instances);

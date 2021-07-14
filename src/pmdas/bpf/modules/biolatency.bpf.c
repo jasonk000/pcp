@@ -49,18 +49,20 @@ int BPF_KPROBE(blk_account_io_done, struct request *req)
 
     // fetch timestamp and calculate delta
     tsp = bpf_map_lookup_elem(&request_starts, &req);
-    if (tsp == 0) {
+    if (tsp == 0)
+    {
         return 0;   // missed issue
     }
 
     delta = bpf_ktime_get_ns() - *tsp;
-    if (delta < 0) {
+    if (delta < 0)
+    {
         return 0;
     }
     delta /= 1000;  // convert ns to usec
 
     // store as histogram
-    slot = bpf_log2l(delta / 1000);
+    slot = bpf_log2l(delta);
     add_or_create_entry(&latencies, &slot, 1);
 
     bpf_map_delete_elem(&request_starts, &req);

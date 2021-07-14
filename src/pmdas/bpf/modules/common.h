@@ -1,12 +1,22 @@
+/**
+ * Common imports and helpers for BPF module that will be loaded by the kernel.
+ */
+
+/* next imports require this defined so they are configured to run in kernel */
 #define __KERNEL__
 
+/* represents all of the kernel structs; generated via bpftool */
 #include "vmlinux.h"
+
+/* bpf kernel-side */
 #include <bpf_core_read.h>
 #include <bpf_helpers.h>
 #include <bpf_tracing.h>
 
-#define BPF_ANY       0 /* create new element or update existing */
+/* create new element or update existing */
+#define BPF_ANY       0
 
+/* log2 helpers so for histograms */
 static inline
 unsigned int bpf_log2(unsigned int v)
 {
@@ -31,6 +41,9 @@ unsigned int bpf_log2l(unsigned long v)
     return bpf_log2(v) + 1;
 }
 
+/**
+ * Create an entry in a BPF map. If the entry already exists, add the value.
+ */
 static inline void add_or_create_entry(void *map, const void *key, const unsigned long val) {
     unsigned long *value = bpf_map_lookup_elem(map, key);
     if (value != 0)
@@ -45,4 +58,5 @@ static inline void add_or_create_entry(void *map, const void *key, const unsigne
     }
 }
 
+/* kernel version compatibility; this is required for earlier kernels but ignored in later libbpf */
 __u32 _version SEC("version") = 1;
