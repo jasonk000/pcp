@@ -8,6 +8,6 @@ mkdir -p /var/lib/pcp/pmdas/bpf/modules
 make
 make -C modules/
 
-cp domain.h help Install pmdabpf pmns README Remove root /var/lib/pcp/pmdas/bpf
+cp bpf.conf domain.h help Install pmdabpf pmns README Remove root /var/lib/pcp/pmdas/bpf
 cp modules/biolatency.bpf.o modules/biolatency.so modules/runqlat.bpf.o modules/runqlat.so /var/lib/pcp/pmdas/bpf/modules
 cd /var/lib/pcp/pmdas/bpf && sudo ./Install

@@ -23,6 +23,7 @@
 #include <bpf/libbpf.h>
 #include <bpf/bpf.h>
 #include <dlfcn.h>
+#include "bpf.h"
 
 static int	isDSO = 1;		/* =0 I am a daemon */
 static char	mypath[MAXPATHLEN];
@@ -230,6 +231,8 @@ bpf_init_modules(unsigned int module_names_count, char** module_names)
     int ret;
     char errorstring[1024];
 
+    pmNotifyErr(LOG_INFO, "booting modules (%d)", module_names_count);
+
     for(int i = 0; i < module_count; i++) {
         // only initialise modules that are in the subset provided
         bool found = false;
@@ -275,6 +278,50 @@ bpf_fetch(int numpmid, pmID pmidlist[], pmResult **resp, pmdaExt *pmda)
     return pmdaFetch(numpmid, pmidlist, resp, pmda);
 }
 
+/**
+ * Load configuration from file
+ */
+struct config
+bpf_load_config(char* filename)
+{
+    // cheap and nasty; do two passes on the file
+    FILE *config_file;
+    char line[256];
+    unsigned int module_num;
+
+    struct config config;
+    config.module_count = 0;
+
+    config_file = fopen(filename, "r");
+    while (!feof(config_file)) {
+        fscanf(config_file, "%s", line);
+        pmNotifyErr(LOG_ERR, "config line = %s", line);
+        if (line[strlen(line)-1] == '\n') {
+            line[strlen(line)-1] = '\0';
+        }
+        if (strlen(line) > 0) {
+            config.module_count++;
+        }
+    }
+
+    config.module_names = (char**) malloc(config.module_count * sizeof(char*));
+
+    fseek(config_file, 0, SEEK_SET);
+    module_num = 0;
+    while (!feof(config_file)) {
+        fscanf(config_file, "%s", line);
+        if (line[strlen(line)-1] == '\n') {
+            line[strlen(line)-1] = '\0';
+        }
+        if (strlen(line) > 0) {
+            config.module_names[module_num] = strdup(line);
+            module_num++;
+        }
+    }
+
+    return config;
+}
+
 /*
  * Initialise the agent (both daemon and DSO).
  */
@@ -298,7 +345,18 @@ bpf_init(pmdaInterface *dp)
     bpf_register_module_metrics();
 
     // TODO module configuration
-    bpf_init_modules(sizeof(modules_to_load)/sizeof(modules_to_load[0]), modules_to_load);
+    char* config_filename;
+    int ret = asprintf(&config_filename, "%s/bpf/bpf.conf", pmGetConfig("PCP_PMDAS_DIR"));
+    if (ret <= 0) {
+        pmNotifyErr(LOG_ERR, "could not construct config filename");
+    } else {
+        pmNotifyErr(LOG_INFO, "loading configuration: %s", config_filename);
+    }
+    struct config config = bpf_load_config(config_filename);
+    pmNotifyErr(LOG_INFO, "loaded configuration: %s", config_filename);
+    free(config_filename);
+    bpf_init_modules(config.module_count, config.module_names);
+    free(config.module_names);
 
     pmdaSetFetchCallBack(dp, bpf_fetchCallBack);
     dp->version.any.fetch = bpf_fetch;
