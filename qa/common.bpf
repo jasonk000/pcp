@@ -17,8 +17,9 @@ _pmdabpf_check()
     [ -f $PCP_PMDAS_DIR/bpf/pmdabpf ] || _notrun "bpf PMDA not installed"
 
     # check for libelf and libbpf
-
     # check libbpf is compatible
+    #
+    # TODO how do?
 
 }
 
