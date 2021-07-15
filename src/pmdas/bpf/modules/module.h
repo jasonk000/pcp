@@ -115,22 +115,10 @@ typedef struct module {
 
 /**
  * List of all modules defined
- *
- * TODO make this dynamic
  */
 char *all_modules[] = {
     "runqlat",
     "biolatency"
-};
-
-/**
- * List of modules that will be loaded and served as metrics
- *
- * TODO make this dynamic
- */
-char *modules_to_load[] = {
-    "biolatency",
-    "runqlat"
 };
 
 #endif
