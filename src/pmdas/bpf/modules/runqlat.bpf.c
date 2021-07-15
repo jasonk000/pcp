@@ -7,7 +7,7 @@
 char _license[] SEC("license") = "GPL";
 
 #define MAX_TASK_ENTRIES	10240
-#define MAX_LATENCY_ENTRIES 512
+#define MAX_LATENCY_ENTRIES 64
 #define TASK_RUNNING 	0
 
 SEC("maps")

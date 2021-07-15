@@ -5,7 +5,7 @@
 char _license[] SEC("license") = "Apache-2.0";
 
 #define MAX_IO_START_ENTRIES	10240
-#define MAX_LATENCY_ENTRIES 512
+#define MAX_LATENCY_ENTRIES 64
 
 SEC("maps")
 struct bpf_map_def request_starts = {
