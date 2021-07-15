@@ -38,6 +38,10 @@ static int indom_count = 0;
 static module** modules;
 static int module_count;
 
+/* modules keyed by cluster id for efficient fetch lookup */
+#define MAX_CLUSTER_ID ((1<<12) - 1)
+static module* modules_by_cluster[MAX_CLUSTER_ID];
+
 /* command line option handling - both short and long options */
 static pmLongOptions longopts[] = {
     PMDA_OPTIONS_HEADER("Options"),
@@ -66,22 +70,18 @@ bpf_fetchCallBack(pmdaMetric *mdesc, unsigned int inst, pmAtomValue *atom)
     unsigned int	cluster = pmID_cluster(mdesc->m_desc.pmid);
     unsigned int	item = pmID_item(mdesc->m_desc.pmid);
 
-    // find module for this cluster, and issue fetch to module
-    // if somehow this bypasses PMCD PMNS filtering it is possible that
-    // a call to an uninitialised module occurs; the module is to handle this
-    for (int i = 0; i < module_count; i++)
-    {
-        if (modules[i]->cluster() == cluster)
-        {
-            return modules[cluster]->fetch_to_atom(item, inst, atom);        
-        }
+    // only modules that have completed their init() successfully will be
+    // available in modules_by_cluster
+    module* target = modules_by_cluster[cluster];
+    if (target != NULL) {
+        return target->fetch_to_atom(item, inst, atom);
     }
- 
-    // A module should have picked up the cluster, based on pmns, even
-    // if it responded with PMDA_FETCH_NOVALUES indicating no values available
-    // for the metric. So, if we have made it here, we've been passed a cluster
-    // that we do not know how to handle. Could be a pmns vs module config issue.
-    return PM_ERR_PMID;
+
+    // To get here, must have had a valid entry in PMNS (so, a known cluster),
+    // and yet no cluster id -> module map was found. Implication is that this
+    // module exists but was not requested in configuration, so, 'no values' is
+    // appropriate as the cluster is known but we have no values for it.
+    return PMDA_FETCH_NOVALUES;
 }
 
 /**
@@ -246,6 +246,15 @@ bpf_init_modules(unsigned int module_names_count, char** module_names)
             continue;
 
         pmNotifyErr(LOG_INFO, "booting: %s", modules[i]->module_name());
+
+        unsigned int cluster_id = modules[i]->cluster();
+        if (modules_by_cluster[cluster_id] != NULL) {
+            pmNotifyErr(LOG_WARNING,
+                "module shares a cluster id %d, module %s will be ignored",
+                cluster_id, modules[i]->module_name());
+            continue;
+        }
+
         ret = modules[i]->init();
         if (ret != 0) {
             libbpf_strerror(ret, errorstring, 1023);
@@ -253,6 +262,9 @@ bpf_init_modules(unsigned int module_names_count, char** module_names)
             modules[i] = NULL;
             continue;
         }
+
+        // initialised, put into cluster -> module map
+        modules_by_cluster[cluster_id] = modules[i];
 
         pmNotifyErr(LOG_INFO, "module initialized");
     }
@@ -267,8 +279,9 @@ bpf_fetch(int numpmid, pmID pmidlist[], pmResult **resp, pmdaExt *pmda)
     for(int i = 0; i < numpmid; i++) {
         unsigned int cluster = pmID_cluster(pmidlist[i]);
         unsigned int item = pmID_item(pmidlist[i]);
-        if (cluster >= 0 && cluster < module_count && modules[cluster] != NULL) {
-            modules[cluster]->refresh(item);
+        module* target = modules_by_cluster[cluster];
+        if (target != NULL) {
+            target->refresh(item);
         }
     }
 
