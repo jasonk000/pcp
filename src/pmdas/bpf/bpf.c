@@ -199,8 +199,8 @@ bpf_register_module_metrics()
         total_metrics += modules[i]->metric_count();
         total_indoms += modules[i]->indom_count();
     }
-    metrictab = (pmdaMetric*) malloc(total_metrics * sizeof(pmdaMetric));
-    indomtab = (pmdaIndom*) malloc(total_indoms * sizeof(pmdaIndom));
+    metrictab = (pmdaMetric*) calloc(total_metrics, sizeof(pmdaMetric));
+    indomtab = (pmdaIndom*) calloc(total_indoms, sizeof(pmdaIndom));
 
     // each module needs to set up its tables, starting at the next available slot
     int current_metric = 0;
@@ -307,7 +307,7 @@ bpf_load_config(char* filename)
         }
     }
 
-    config.module_names = (char**) malloc(config.module_count * sizeof(char*));
+    config.module_names = (char**) calloc(config.module_count, sizeof(char*));
 
     fseek(config_file, 0, SEEK_SET);
     module_num = 0;
