@@ -178,7 +178,7 @@ void
 bpf_load_modules()
 {
     module_count = sizeof(all_modules)/sizeof(all_modules[0]);
-    modules = (module**) malloc(2 * sizeof(module*));
+    modules = (module**) malloc(module_count * sizeof(module*));
     for(int i = 0; i < module_count; i++) {
         modules[i] = bpf_load_module(all_modules[i]);
     }
