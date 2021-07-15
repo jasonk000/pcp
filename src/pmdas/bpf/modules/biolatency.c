@@ -142,17 +142,14 @@ int biolatency_fetch_to_atom(unsigned int item, unsigned int inst, pmAtomValue *
     return PMDA_FETCH_STATIC;
 }
 
-module* load_module()
-{
-    module *new_module = malloc(sizeof(module));
-    new_module->module_name = biolatency_name;
-    new_module->init = biolatency_init;
-    new_module->register_metrics = biolatency_register;
-    new_module->cluster = biolatency_cluster;
-    new_module->metric_count = biolatency_metric_count;
-    new_module->indom_count = biolatency_indom_count;
-    new_module->shutdown = biolatency_shutdown;
-    new_module->refresh = biolatency_refresh;
-    new_module->fetch_to_atom = biolatency_fetch_to_atom;
-    return new_module;
-}
+struct module bpf_module = {
+    .module_name        = biolatency_name,
+    .init               = biolatency_init,
+    .register_metrics   = biolatency_register,
+    .cluster            = biolatency_cluster,
+    .metric_count       = biolatency_metric_count,
+    .indom_count        = biolatency_indom_count,
+    .shutdown           = biolatency_shutdown,
+    .refresh            = biolatency_refresh,
+    .fetch_to_atom      = biolatency_fetch_to_atom,
+};

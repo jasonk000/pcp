@@ -142,17 +142,14 @@ int runqlat_fetch_to_atom(unsigned int item, unsigned int inst, pmAtomValue *ato
     return PMDA_FETCH_STATIC;
 }
 
-module* load_module()
-{
-    module *new_module = malloc(sizeof(module));
-    new_module->module_name = runqlat_name;
-    new_module->init = runqlat_init;
-    new_module->register_metrics = runqlat_register;
-    new_module->cluster = runqlat_cluster;
-    new_module->metric_count = runqlat_metric_count;
-    new_module->indom_count = runqlat_indom_count;
-    new_module->shutdown = runqlat_shutdown;
-    new_module->refresh = runqlat_refresh;
-    new_module->fetch_to_atom = runqlat_fetch_to_atom;
-    return new_module;
-}
+struct module bpf_module = {
+    .module_name        = runqlat_name,
+    .init               = runqlat_init,
+    .register_metrics   = runqlat_register,
+    .cluster            = runqlat_cluster,
+    .metric_count       = runqlat_metric_count,
+    .indom_count        = runqlat_indom_count,
+    .shutdown           = runqlat_shutdown,
+    .refresh            = runqlat_refresh,
+    .fetch_to_atom      = runqlat_fetch_to_atom,
+};

@@ -26,7 +26,7 @@ typedef int (*fetch_to_atom_fn_t)(unsigned int item, unsigned int inst, pmAtomVa
  * calls; even if they are a noop they should provide default behaviour as they will
  * be called.
  */
-typedef struct {
+typedef struct module {
     /**
      * Returns a pointer to the name of the module.
      *

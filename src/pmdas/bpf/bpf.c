@@ -136,12 +136,11 @@ void bpf_setrlimit()
 /**
  * Load a single module from modules/
  *
- * This will call dlopen, look up and call load_module() to load the module.
+ * This will call dlopen, look up the bpf_module to load the module.
  */
 module* bpf_load_module(char * name)
 {
     module *loaded_module = NULL;
-    module *(*load_module_fn)();
     char *fullpath;
     char *error;
 
@@ -162,11 +161,9 @@ module* bpf_load_module(char * name)
         goto cleanup;
     }
 
-    load_module_fn = dlsym(dl_module, "load_module");
+    loaded_module = dlsym(dl_module, "bpf_module");
     if ((error = dlerror()) != NULL) {
-        pmNotifyErr(LOG_ERR, "dlsym failed: %s, %s", fullpath, error);
-    } else {
-        loaded_module = (*load_module_fn)();
+        pmNotifyErr(LOG_ERR, "dlsym failed to find module: %s, %s", fullpath, error);
     }
 
 cleanup:
