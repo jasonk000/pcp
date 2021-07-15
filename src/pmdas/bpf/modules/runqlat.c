@@ -5,7 +5,7 @@
 
 #include "module_helpers.h"
 
-#define NUM_LATENCY_SLOTS 64
+#define NUM_LATENCY_SLOTS 63
 pmdaInstid runqlat_instances[NUM_LATENCY_SLOTS];
 
 int runqlat_fd = -1;

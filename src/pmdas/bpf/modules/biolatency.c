@@ -5,7 +5,7 @@
 
 #include "module_helpers.h"
 
-#define NUM_LATENCY_SLOTS 64
+#define NUM_LATENCY_SLOTS 63
 pmdaInstid biolatency_instances[NUM_LATENCY_SLOTS];
 
 int biolatency_fd = -1;
