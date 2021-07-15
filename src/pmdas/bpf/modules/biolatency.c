@@ -15,17 +15,17 @@ char * biolatency_name()
     return "biolatency";
 }
 
-int biolatency_metric_count()
+unsigned int biolatency_metric_count()
 {
     return 1;
 }
 
-int biolatency_indom_count()
+unsigned int biolatency_indom_count()
 {
     return 1;
 }
 
-int biolatency_cluster()
+unsigned int biolatency_cluster()
 {
     return BIOLATENCY_CLUSTER;
 }

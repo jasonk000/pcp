@@ -15,17 +15,17 @@ char * runqlat_name()
     return "runqlat";
 }
 
-int runqlat_metric_count()
+unsigned int runqlat_metric_count()
 {
     return 1;
 }
 
-int runqlat_indom_count()
+unsigned int runqlat_indom_count()
 {
     return 1;
 }
 
-int runqlat_cluster()
+unsigned int runqlat_cluster()
 {
     return RUNQLAT_CLUSTER;
 }

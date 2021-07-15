@@ -9,9 +9,9 @@ typedef char* (*name_fn_t)(void);
 typedef int (*init_fn_t)();
 typedef void (*register_fn_t)(pmdaMetric *metrics, pmdaIndom *indoms);
 typedef int (*shutdown_fn_t)(void);
-typedef int (*metric_count_fn_t)(void);
-typedef int (*cluster_fn_t)(void);
-typedef int (*indom_count_fn_t)(void);
+typedef unsigned int (*metric_count_fn_t)(void);
+typedef unsigned int (*cluster_fn_t)(void);
+typedef unsigned int (*indom_count_fn_t)(void);
 typedef void (*refresh_fn_t)(unsigned int item);
 typedef int (*fetch_to_atom_fn_t)(unsigned int item, unsigned int inst, pmAtomValue *atom);
 
