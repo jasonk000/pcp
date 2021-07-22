@@ -11,8 +11,8 @@ default_pcp default:	$(MODULES) $(BPF_MODULES)
 
 include $(BUILDRULES)
 
-$(eval $(shell grep VERSION_ID /etc/os-release))
-$(eval $(shell grep ID /etc/os-release))
+$(eval $(shell grep ^VERSION_ID= /etc/os-release))
+$(eval $(shell grep ^ID= /etc/os-release))
 
 install_pcp install:	default
 	$(INSTALL) -m 755 -d $(MODULEDIR)
