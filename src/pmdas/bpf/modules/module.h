@@ -9,9 +9,11 @@ typedef int (*init_fn_t)();
 typedef void (*register_fn_t)(unsigned int cluster_id, pmdaMetric *metrics, pmdaIndom *indoms);
 typedef int (*shutdown_fn_t)(void);
 typedef unsigned int (*metric_count_fn_t)(void);
+typedef void (*set_indom_serial_fn_t)(unsigned int local_indom_id, unsigned int global_id);
 typedef unsigned int (*indom_count_fn_t)(void);
 typedef void (*refresh_fn_t)(unsigned int item);
 typedef int (*fetch_to_atom_fn_t)(unsigned int item, unsigned int inst, pmAtomValue *atom);
+typedef char* (*metric_name_fn_t)(unsigned int metric);
 
 /**
  * Module layer interface struct.
@@ -31,6 +33,14 @@ typedef struct module {
      * This is used to allocate sufficient space for register_metrics call later.
      */
     indom_count_fn_t indom_count;
+
+    /**
+     * Set indom serial to support dynamic indom setup
+     * 
+     * Will be called "indom_count" times, start ing from 0 to "indom_count - 1", to inform
+     * this module what the global indom id is for the given local id.
+     */
+    set_indom_serial_fn_t set_indom_serial;
 
     /**
      * Return the number of pmdaMetric slots this instance requires.
@@ -80,17 +90,12 @@ typedef struct module {
      * with PMDA_FETCH_NOVALUES. This is the module's responsibility.
      */
     fetch_to_atom_fn_t fetch_to_atom;
+
+    /**
+     * Fetch name for a metric
+     */
+    metric_name_fn_t metric_name;
 } module;
-
-/**
- * Instance domains, need to be unique across all modules.
- *
- * A single module could use more instance domains, in which case list them all with
- * unique numbers.
- */
-#define RUNQLAT_INDOM 0
-#define BIOLATENCY_INDOM 1
-
 
 /**
  * List of all modules defined

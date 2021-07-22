@@ -23,6 +23,7 @@ iam=bpf
 domain=157
 daemon_opt=true
 pipe_opt=true
+pmns_source=root_bpf
 
 pmdaSetup
 pmdaInstall

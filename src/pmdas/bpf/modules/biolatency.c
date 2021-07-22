@@ -9,28 +9,46 @@
 pmdaInstid biolatency_instances[NUM_LATENCY_SLOTS];
 
 int biolatency_fd = -1;
+#define INDOM_COUNT 1
+#define BIOLATENCY_INDOM 0
+unsigned int indom_id_mapping[INDOM_COUNT];
+
+#define METRIC_COUNT 1
+char* metric_names[METRIC_COUNT] = {
+	"disk.all.latency"
+};
 
 unsigned int biolatency_metric_count()
 {
-    return 1;
+    return METRIC_COUNT;
+}
+
+char* biolatency_metric_name(unsigned int metric)
+{
+	return metric_names[metric];
 }
 
 unsigned int biolatency_indom_count()
 {
-    return 1;
+    return INDOM_COUNT;
+}
+
+void biolatency_set_indom_serial(unsigned int local_indom_id, unsigned int global_id)
+{
+    indom_id_mapping[local_indom_id] = global_id;
 }
 
 void biolatency_register(unsigned int cluster_id, pmdaMetric *metrics, pmdaIndom *indoms)
 {
     // must match PMNS
 
-	/* bpf.disk.all.latency */
+    /* bpf.disk.all.latency */
     metrics[0] = (struct pmdaMetric)
         { /* m_user */ NULL,
             { /* m_desc */
                 PMDA_PMID(cluster_id, 0),
                 PM_TYPE_U64,
-                BIOLATENCY_INDOM,
+                indom_id_mapping[BIOLATENCY_INDOM],
                 PM_SEM_COUNTER,
                 PMDA_PMUNITS(0, 1, 0, 0, PM_TIME_USEC, 0)
             }
@@ -38,7 +56,7 @@ void biolatency_register(unsigned int cluster_id, pmdaMetric *metrics, pmdaIndom
 
     indoms[0] = (struct pmdaIndom)
         {
-            BIOLATENCY_INDOM,
+            indom_id_mapping[BIOLATENCY_INDOM],
             sizeof(biolatency_instances)/sizeof(pmdaIndom),
             biolatency_instances
         };
@@ -137,7 +155,9 @@ struct module bpf_module = {
     .register_metrics   = biolatency_register,
     .metric_count       = biolatency_metric_count,
     .indom_count        = biolatency_indom_count,
+    .set_indom_serial   = biolatency_set_indom_serial,
     .shutdown           = biolatency_shutdown,
     .refresh            = biolatency_refresh,
     .fetch_to_atom      = biolatency_fetch_to_atom,
+	.metric_name        = biolatency_metric_name,
 };

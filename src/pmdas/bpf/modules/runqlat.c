@@ -9,15 +9,33 @@
 pmdaInstid runqlat_instances[NUM_LATENCY_SLOTS];
 
 int runqlat_fd = -1;
+#define INDOM_COUNT 1
+#define RUNQLAT_INDOM 0
+unsigned int indom_id_mapping[INDOM_COUNT];
+
+#define METRIC_COUNT 1
+char* metric_names[METRIC_COUNT] = {
+    "runq.latency"
+};
 
 unsigned int runqlat_metric_count()
 {
     return 1;
 }
 
+char* runqlat_metric_name(unsigned int metric)
+{
+    return metric_names[metric];
+}
+
 unsigned int runqlat_indom_count()
 {
-    return 1;
+    return INDOM_COUNT;
+}
+
+void runqlat_set_indom_serial(unsigned int local_indom_id, unsigned int global_id)
+{
+    indom_id_mapping[local_indom_id] = global_id;
 }
 
 void runqlat_register(unsigned int cluster_id, pmdaMetric *metrics, pmdaIndom *indoms)
@@ -30,7 +48,7 @@ void runqlat_register(unsigned int cluster_id, pmdaMetric *metrics, pmdaIndom *i
             { /* m_desc */
                 PMDA_PMID(cluster_id, 0),
                 PM_TYPE_U64,
-                RUNQLAT_INDOM,
+                indom_id_mapping[RUNQLAT_INDOM],
                 PM_SEM_COUNTER,
                 PMDA_PMUNITS(0, 1, 0, 0, PM_TIME_NSEC, 0)
             }
@@ -38,7 +56,7 @@ void runqlat_register(unsigned int cluster_id, pmdaMetric *metrics, pmdaIndom *i
 
     indoms[0] = (struct pmdaIndom)
         {
-            RUNQLAT_INDOM,
+            indom_id_mapping[RUNQLAT_INDOM],
             sizeof(runqlat_instances)/sizeof(pmdaIndom),
             runqlat_instances
         };
@@ -137,7 +155,9 @@ struct module bpf_module = {
     .register_metrics   = runqlat_register,
     .metric_count       = runqlat_metric_count,
     .indom_count        = runqlat_indom_count,
+    .set_indom_serial   = runqlat_set_indom_serial,
     .shutdown           = runqlat_shutdown,
     .refresh            = runqlat_refresh,
     .fetch_to_atom      = runqlat_fetch_to_atom,
+    .metric_name        = runqlat_metric_name,
 };

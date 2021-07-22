@@ -25,11 +25,13 @@
 #include <dlfcn.h>
 #include "bpf.h"
 
-/* modules keyed by cluster id for efficient fetch lookup */
+/* see libpcp.h __pmXx_int */
 #define MAX_CLUSTER_ID ((1<<12) - 1)
+#define MAX_INDOM_ID ((1<<22) - 1)
 
 /* pmdaCacheOp cache IDs */
 #define CACHE_CLUSTER_IDS 0
+#define CACHE_INDOM_IDS 1
 
 static int	isDSO = 1;		/* =0 I am a daemon */
 static char	mypath[MAXPATHLEN];
@@ -39,6 +41,7 @@ static pmdaMetric * metrictab;
 static pmdaIndom * indomtab;
 static int metric_count = 0;
 static int indom_count = 0;
+static pmdaNameSpace *pmns;
 
 /* command line option handling - both short and long options */
 static pmLongOptions longopts[] = {
@@ -185,6 +188,10 @@ bpf_load_modules(struct config cfg)
     pmdaCacheResize(CACHE_CLUSTER_IDS, MAX_CLUSTER_ID);
     pmdaCacheOp(CACHE_CLUSTER_IDS, PMDA_CACHE_STRINGS);
     pmdaCacheOp(CACHE_CLUSTER_IDS, PMDA_CACHE_LOAD);
+    pmdaCacheResize(CACHE_INDOM_IDS, MAX_INDOM_ID);
+    pmdaCacheOp(CACHE_CLUSTER_IDS, PMDA_CACHE_STRINGS);
+    pmdaCacheOp(CACHE_CLUSTER_IDS, PMDA_CACHE_LOAD);
+
 
     pmNotifyErr(LOG_INFO, "booting modules (%d)", cfg.module_count);
 
@@ -227,6 +234,8 @@ bpf_register_module_metrics()
     int total_indoms = 0;
     int cache_op_status;
     module* module;
+    char indom[64];
+    char *name;
 
     pmdaCacheOp(CACHE_CLUSTER_IDS, PMDA_CACHE_WALK_REWIND);
     cache_op_status = pmdaCacheOp(CACHE_CLUSTER_IDS, PMDA_CACHE_WALK_NEXT);
@@ -238,6 +247,7 @@ bpf_register_module_metrics()
         cache_op_status = pmdaCacheOp(CACHE_CLUSTER_IDS, PMDA_CACHE_WALK_NEXT);
     }
 
+    // set up indom mapping
     metrictab = (pmdaMetric*) calloc(total_metrics, sizeof(pmdaMetric));
     indomtab = (pmdaIndom*) calloc(total_indoms, sizeof(pmdaIndom));
 
@@ -248,8 +258,19 @@ bpf_register_module_metrics()
     cache_op_status = pmdaCacheOp(CACHE_CLUSTER_IDS, PMDA_CACHE_WALK_NEXT);
     while(cache_op_status != -1) {
         int cluster_id = cache_op_status;
-        cache_op_status = pmdaCacheLookup(CACHE_CLUSTER_IDS, cluster_id, NULL, (void**)&module);
+        cache_op_status = pmdaCacheLookup(CACHE_CLUSTER_IDS, cluster_id, &name, (void**)&module);
+
+        // set up indom mapping for the module
+        for(int i = 0; i < module->indom_count(); i++) {
+            pmsprintf(indom, sizeof(indom), "%s/%d", name, i);
+            int serial = pmdaCacheStore(CACHE_INDOM_IDS, PMDA_CACHE_ADD, indom, NULL);
+            module->set_indom_serial(i, serial);
+        }
+
+        // register all of the metrics
         module->register_metrics(cluster_id, &metrictab[current_metric], &indomtab[current_indom]);
+
+        // progress
         current_metric += module->metric_count();
         current_indom += module->indom_count();
         cache_op_status = pmdaCacheOp(CACHE_CLUSTER_IDS, PMDA_CACHE_WALK_NEXT);
@@ -278,6 +299,35 @@ bpf_fetch(int numpmid, pmID pmidlist[], pmResult **resp, pmdaExt *pmda)
     }
 
     return pmdaFetch(numpmid, pmidlist, resp, pmda);
+}
+
+void
+bpf_setup_pmns()
+{
+    int ret;
+    char name[64];
+    module* target;
+
+    ret = pmdaTreeCreate(&pmns);
+    if (ret < 0)
+    {
+        pmNotifyErr(LOG_ERR, "%s: failed to create new pmns: %s\n", pmGetProgname(), pmErrStr(ret));
+        pmns = NULL;
+        return;
+    }
+
+    for (int i = 0; i < metric_count; i++) {
+        unsigned int cluster_id = pmID_cluster(metrictab[i].m_desc.pmid);
+        unsigned int item = pmID_item(metrictab[i].m_desc.pmid);
+
+        ret = pmdaCacheLookup(CACHE_CLUSTER_IDS, cluster_id, NULL, (void**)&target);
+        if (ret == PMDA_CACHE_ACTIVE) {
+            pmsprintf(name, sizeof(name), "bpf.%s", target->metric_name(item));
+            pmdaTreeInsert(pmns, metrictab[i].m_desc.pmid, name);
+        }
+    }
+
+    pmdaTreeRebuildHash(pmns, metric_count);
 }
 
 /**
@@ -333,6 +383,28 @@ bpf_load_config(char* filename)
     return config;
 }
 
+/**
+ * Callbacks to support dynamic namespace
+ */
+
+static int
+bpf_pmid(const char *name, pmID *pmid, pmdaExt *pmda)
+{
+	return pmdaTreePMID(pmns, name, pmid);
+}
+
+static int
+bpf_name(pmID pmid, char ***nameset, pmdaExt *pmda)
+{
+	return pmdaTreeName(pmns, pmid, nameset);
+}
+
+static int
+bpf_children(const char *name, int flag, char ***kids, int **sts, pmdaExt *pmda)
+{
+	return pmdaTreeChildren(pmns, name, flag, kids, sts);
+}
+
 /*
  * Initialise the agent (both daemon and DSO).
  */
@@ -366,15 +438,18 @@ bpf_init(pmdaInterface *dp)
     libbpf_set_print(bpf_printfn);
 
     bpf_load_modules(config);
-    pmNotifyErr(LOG_INFO, "loaded.");
     bpf_register_module_metrics();
-    pmNotifyErr(LOG_INFO, "registered.");
 
     // set up PMDA callbacks
     pmdaSetFetchCallBack(dp, bpf_fetchCallBack);
     dp->version.any.fetch = bpf_fetch;
+	dp->version.four.pmid = bpf_pmid;
+	dp->version.four.name = bpf_name;
+	dp->version.four.children = bpf_children;
 
     pmdaInit(dp, indomtab, indom_count, metrictab, metric_count);
+
+    bpf_setup_pmns();
 }
 
 /*
