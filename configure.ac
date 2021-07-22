@@ -153,6 +153,12 @@ AC_ARG_WITH([pmdabcc],
     [do_pmdabcc=$withval; PACKAGE_CONFIGURE="$PACKAGE_CONFIGURE --with-pmdabcc=$withval"],
     [do_pmdabcc=check])
 
+AC_ARG_WITH([pmdabpf],
+    [AC_HELP_STRING([--with-pmdabpf],
+		   [enable BPF pmda (default is on)])],
+    [do_pmdabpf=$withval; PACKAGE_CONFIGURE="$PACKAGE_CONFIGURE --with-pmdabpf=$withval"],
+    [do_pmdabpf=check])
+
 AC_ARG_WITH([pmdabpftrace],
     [AC_HELP_STRING([--with-pmdabpftrace],
 		   [enable bpftrace pmda (default is on)])],
@@ -1089,6 +1095,16 @@ AS_IF([test "x$do_pmdabcc" = "xcheck"], [
     dnl BCC PMDA needs python3, and OrderedDict and BPF Python modules
     $enable_python3 && $have_python_BPF && \
 	$have_python_OrderedDict && pmda_bcc=true
+])
+AC_SUBST(PMDA_BCC, $pmda_bcc)
+if $pmda_bcc; then AC_MSG_RESULT(yes); else AC_MSG_RESULT(no); fi
+
+AC_MSG_CHECKING([if the bpf PMDA should be included])
+pmda_bpf=false
+AS_IF([test "x$do_pmdabpf" = "xyes"], [pmda_bpf=true])
+AS_IF([test "x$do_pmdabpf" = "xcheck"], [
+    dnl pmdabpf requires libbpf and libelf
+    $have_libbpf && $have_libelf && pmda_bpf=true
 ])
 AC_SUBST(PMDA_BCC, $pmda_bcc)
 if $pmda_bcc; then AC_MSG_RESULT(yes); else AC_MSG_RESULT(no); fi

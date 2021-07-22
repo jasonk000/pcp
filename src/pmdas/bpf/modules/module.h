@@ -5,12 +5,10 @@
 #include <pcp/pmda.h>
 #include <math.h>
 
-typedef char* (*name_fn_t)(void);
 typedef int (*init_fn_t)();
-typedef void (*register_fn_t)(pmdaMetric *metrics, pmdaIndom *indoms);
+typedef void (*register_fn_t)(unsigned int cluster_id, pmdaMetric *metrics, pmdaIndom *indoms);
 typedef int (*shutdown_fn_t)(void);
 typedef unsigned int (*metric_count_fn_t)(void);
-typedef unsigned int (*cluster_fn_t)(void);
 typedef unsigned int (*indom_count_fn_t)(void);
 typedef void (*refresh_fn_t)(unsigned int item);
 typedef int (*fetch_to_atom_fn_t)(unsigned int item, unsigned int inst, pmAtomValue *atom);
@@ -28,13 +26,6 @@ typedef int (*fetch_to_atom_fn_t)(unsigned int item, unsigned int inst, pmAtomVa
  */
 typedef struct module {
     /**
-     * Returns a pointer to the name of the module.
-     *
-     * Caller should not free() this as it is statically allocated.
-     */
-    name_fn_t module_name;
-
-    /**
      * Return the number of pmdaIndom this instance requires.
      *
      * This is used to allocate sufficient space for register_metrics call later.
@@ -47,13 +38,6 @@ typedef struct module {
      * This is used to allocate sufficient space for register_metrics call later.
      */
     metric_count_fn_t metric_count;
-
-    /**
-     * Return the cluster number for this module.
-     *
-     * The cluster here must match the definitions in PMNS.
-     */
-    cluster_fn_t cluster;
 
     /**
      * Callback to have module fill in pmdaMetric and pmdaIndom records.
@@ -107,11 +91,6 @@ typedef struct module {
 #define RUNQLAT_INDOM 0
 #define BIOLATENCY_INDOM 1
 
-/**
- * the pmid cluster assigned to each module, unique for each module.
- */
-#define RUNQLAT_CLUSTER 0
-#define BIOLATENCY_CLUSTER 1
 
 /**
  * List of all modules defined

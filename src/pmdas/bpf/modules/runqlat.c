@@ -10,11 +10,6 @@ pmdaInstid runqlat_instances[NUM_LATENCY_SLOTS];
 
 int runqlat_fd = -1;
 
-char * runqlat_name()
-{
-    return "runqlat";
-}
-
 unsigned int runqlat_metric_count()
 {
     return 1;
@@ -25,12 +20,7 @@ unsigned int runqlat_indom_count()
     return 1;
 }
 
-unsigned int runqlat_cluster()
-{
-    return RUNQLAT_CLUSTER;
-}
-
-void runqlat_register(pmdaMetric *metrics, pmdaIndom *indoms)
+void runqlat_register(unsigned int cluster_id, pmdaMetric *metrics, pmdaIndom *indoms)
 {
     // must match PMNS
 
@@ -38,7 +28,7 @@ void runqlat_register(pmdaMetric *metrics, pmdaIndom *indoms)
     metrics[0] = (struct pmdaMetric)
         { /* m_user */ NULL,
             { /* m_desc */
-                PMDA_PMID(RUNQLAT_CLUSTER, 0),
+                PMDA_PMID(cluster_id, 0),
                 PM_TYPE_U64,
                 RUNQLAT_INDOM,
                 PM_SEM_COUNTER,
@@ -143,10 +133,8 @@ int runqlat_fetch_to_atom(unsigned int item, unsigned int inst, pmAtomValue *ato
 }
 
 struct module bpf_module = {
-    .module_name        = runqlat_name,
     .init               = runqlat_init,
     .register_metrics   = runqlat_register,
-    .cluster            = runqlat_cluster,
     .metric_count       = runqlat_metric_count,
     .indom_count        = runqlat_indom_count,
     .shutdown           = runqlat_shutdown,

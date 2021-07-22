@@ -18,9 +18,8 @@ _pmdabpf_check()
 
     # check for libelf and libbpf
     # check libbpf is compatible
-    #
-    # TODO how do?
 
+    # TODO how do?
 }
 
 _pmdabpf_require_kernel_version()

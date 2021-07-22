@@ -25,6 +25,12 @@
 #include <dlfcn.h>
 #include "bpf.h"
 
+/* modules keyed by cluster id for efficient fetch lookup */
+#define MAX_CLUSTER_ID ((1<<12) - 1)
+
+/* pmdaCacheOp cache IDs */
+#define CACHE_CLUSTER_IDS 0
+
 static int	isDSO = 1;		/* =0 I am a daemon */
 static char	mypath[MAXPATHLEN];
 
@@ -33,14 +39,6 @@ static pmdaMetric * metrictab;
 static pmdaIndom * indomtab;
 static int metric_count = 0;
 static int indom_count = 0;
-
-/* all modules collected here (whether initialised or not) */
-static module** modules;
-static int module_count;
-
-/* modules keyed by cluster id for efficient fetch lookup */
-#define MAX_CLUSTER_ID ((1<<12) - 1)
-static module* modules_by_cluster[MAX_CLUSTER_ID];
 
 /* command line option handling - both short and long options */
 static pmLongOptions longopts[] = {
@@ -70,11 +68,14 @@ bpf_fetchCallBack(pmdaMetric *mdesc, unsigned int inst, pmAtomValue *atom)
     unsigned int	cluster = pmID_cluster(mdesc->m_desc.pmid);
     unsigned int	item = pmID_item(mdesc->m_desc.pmid);
 
+    int cache_result;
+    module* module;
+
     // only modules that have completed their init() successfully will be
     // available in modules_by_cluster
-    module* target = modules_by_cluster[cluster];
-    if (target != NULL) {
-        return target->fetch_to_atom(item, inst, atom);
+    cache_result = pmdaCacheLookup(CACHE_CLUSTER_IDS, cluster, NULL, (void**)&module);
+    if (cache_result == PMDA_CACHE_ACTIVE) {
+        return module->fetch_to_atom(item, inst, atom);
     }
 
     // To get here, must have had a valid entry in PMNS (so, a known cluster),
@@ -175,13 +176,42 @@ cleanup:
  * load all known modules
  */
 void
-bpf_load_modules()
+bpf_load_modules(struct config cfg)
 {
-    module_count = sizeof(all_modules)/sizeof(all_modules[0]);
-    modules = (module**) malloc(module_count * sizeof(module*));
-    for(int i = 0; i < module_count; i++) {
-        modules[i] = bpf_load_module(all_modules[i]);
+    int ret;
+    char errorstring[1024];
+    module *module;
+
+    pmdaCacheResize(CACHE_CLUSTER_IDS, MAX_CLUSTER_ID);
+    pmdaCacheOp(CACHE_CLUSTER_IDS, PMDA_CACHE_STRINGS);
+    pmdaCacheOp(CACHE_CLUSTER_IDS, PMDA_CACHE_LOAD);
+
+    pmNotifyErr(LOG_INFO, "booting modules (%d)", cfg.module_count);
+
+    for(int i = 0; i < cfg.module_count; i++) {
+        if (cfg.module_names[i][0] == '#')
+            continue;
+
+        module = bpf_load_module(cfg.module_names[i]);
+        if (module == NULL) {
+            pmNotifyErr(LOG_ERR, "could not load module (%s)", cfg.module_names[i]);
+            continue;
+        }
+
+        pmNotifyErr(LOG_INFO, "found: %s", cfg.module_names[i]);
+
+        ret = module->init();
+        if (ret != 0) {
+            libbpf_strerror(ret, errorstring, 1023);
+            pmNotifyErr(LOG_ERR, "module initialization failed: %d, %s", ret, errorstring);
+            continue;
+        }
+
+        unsigned int cluster_id = pmdaCacheStore(CACHE_CLUSTER_IDS, PMDA_CACHE_ADD, cfg.module_names[i], module);
+        pmNotifyErr(LOG_INFO, "module (%s) initialized with cluster_id = %d", cfg.module_names[i], cluster_id);
     }
+
+    pmdaCacheOp(CACHE_CLUSTER_IDS, PMDA_CACHE_SAVE);
 }
 
 /**
@@ -195,79 +225,38 @@ bpf_register_module_metrics()
     // identify how much space we need and set up metric table area
     int total_metrics = 0;
     int total_indoms = 0;
-    for(int i = 0; i < module_count; i++) {
-        total_metrics += modules[i]->metric_count();
-        total_indoms += modules[i]->indom_count();
+    int cache_op_status;
+    module* module;
+
+    pmdaCacheOp(CACHE_CLUSTER_IDS, PMDA_CACHE_WALK_REWIND);
+    cache_op_status = pmdaCacheOp(CACHE_CLUSTER_IDS, PMDA_CACHE_WALK_NEXT);
+    while(cache_op_status != -1) {
+        int cluster_id = cache_op_status;
+        cache_op_status = pmdaCacheLookup(CACHE_CLUSTER_IDS, cluster_id, NULL, (void**)&module);
+        total_metrics += module->metric_count();
+        total_indoms += module->indom_count();
+        cache_op_status = pmdaCacheOp(CACHE_CLUSTER_IDS, PMDA_CACHE_WALK_NEXT);
     }
+
     metrictab = (pmdaMetric*) calloc(total_metrics, sizeof(pmdaMetric));
     indomtab = (pmdaIndom*) calloc(total_indoms, sizeof(pmdaIndom));
 
     // each module needs to set up its tables, starting at the next available slot
     int current_metric = 0;
     int current_indom = 0;
-    for(int i = 0; i < module_count; i++) {
-        pmNotifyErr(LOG_INFO, "registering: %s", modules[i]->module_name());
-        modules[i]->register_metrics(&metrictab[current_metric], &indomtab[current_indom]);
-
-        current_metric += modules[i]->metric_count();
-        current_indom += modules[i]->indom_count();
+    pmdaCacheOp(CACHE_CLUSTER_IDS, PMDA_CACHE_WALK_REWIND);
+    cache_op_status = pmdaCacheOp(CACHE_CLUSTER_IDS, PMDA_CACHE_WALK_NEXT);
+    while(cache_op_status != -1) {
+        int cluster_id = cache_op_status;
+        cache_op_status = pmdaCacheLookup(CACHE_CLUSTER_IDS, cluster_id, NULL, (void**)&module);
+        module->register_metrics(cluster_id, &metrictab[current_metric], &indomtab[current_indom]);
+        current_metric += module->metric_count();
+        current_indom += module->indom_count();
+        cache_op_status = pmdaCacheOp(CACHE_CLUSTER_IDS, PMDA_CACHE_WALK_NEXT);
     }
 
     metric_count = current_metric;
     indom_count = current_indom;
-}
-
-/**
- * Initialize configured modules.
- *
- * Perhaps only a subset of all available metrics will be initialised.
- */
-void
-bpf_init_modules(unsigned int module_names_count, char** module_names)
-{
-    int ret;
-    char errorstring[1024];
-
-    pmNotifyErr(LOG_INFO, "booting modules (%d)", module_names_count);
-
-    for(int i = 0; i < module_count; i++) {
-        // only initialise modules that are in the subset provided
-        bool found = false;
-        char *name = modules[i]->module_name();
-
-        for(int j = 0; j < module_names_count; j++) {
-            if (strcmp(name, module_names[j]) == 0) {
-                found = true;
-            }
-        }
-
-        // skip if not expected to be initialized
-        if (!found)
-            continue;
-
-        pmNotifyErr(LOG_INFO, "booting: %s", modules[i]->module_name());
-
-        unsigned int cluster_id = modules[i]->cluster();
-        if (modules_by_cluster[cluster_id] != NULL) {
-            pmNotifyErr(LOG_WARNING,
-                "module shares a cluster id %d, module %s will be ignored",
-                cluster_id, modules[i]->module_name());
-            continue;
-        }
-
-        ret = modules[i]->init();
-        if (ret != 0) {
-            libbpf_strerror(ret, errorstring, 1023);
-            pmNotifyErr(LOG_ERR, "module initialization failed: %d, %s", ret, errorstring);
-            modules[i] = NULL;
-            continue;
-        }
-
-        // initialised, put into cluster -> module map
-        modules_by_cluster[cluster_id] = modules[i];
-
-        pmNotifyErr(LOG_INFO, "module initialized");
-    }
 }
 
 /**
@@ -276,11 +265,14 @@ bpf_init_modules(unsigned int module_names_count, char** module_names)
 int
 bpf_fetch(int numpmid, pmID pmidlist[], pmResult **resp, pmdaExt *pmda)
 {
+    module* target;
+    int cache_result;
+
     for(int i = 0; i < numpmid; i++) {
-        unsigned int cluster = pmID_cluster(pmidlist[i]);
+        unsigned int cluster_id = pmID_cluster(pmidlist[i]);
         unsigned int item = pmID_item(pmidlist[i]);
-        module* target = modules_by_cluster[cluster];
-        if (target != NULL) {
+        cache_result = pmdaCacheLookup(CACHE_CLUSTER_IDS, cluster_id, NULL, (void**)&target);
+        if (cache_result == PMDA_CACHE_ACTIVE) {
             target->refresh(item);
         }
     }
@@ -357,12 +349,6 @@ bpf_init(pmdaInterface *dp)
     if (dp->status != 0)
         return;
 
-    bpf_setrlimit();
-    libbpf_set_print(bpf_printfn);
-
-    bpf_load_modules();
-    bpf_register_module_metrics();
-
     // TODO module configuration
     char* config_filename;
     int ret = asprintf(&config_filename, "%s/bpf/bpf.conf", pmGetConfig("PCP_PMDAS_DIR"));
@@ -374,9 +360,17 @@ bpf_init(pmdaInterface *dp)
     struct config config = bpf_load_config(config_filename);
     pmNotifyErr(LOG_INFO, "loaded configuration: %s", config_filename);
     free(config_filename);
-    bpf_init_modules(config.module_count, config.module_names);
-    free(config.module_names);
 
+    // libbpf setup
+    bpf_setrlimit();
+    libbpf_set_print(bpf_printfn);
+
+    bpf_load_modules(config);
+    pmNotifyErr(LOG_INFO, "loaded.");
+    bpf_register_module_metrics();
+    pmNotifyErr(LOG_INFO, "registered.");
+
+    // set up PMDA callbacks
     pmdaSetFetchCallBack(dp, bpf_fetchCallBack);
     dp->version.any.fetch = bpf_fetch;
 

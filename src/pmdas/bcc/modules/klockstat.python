@@ -107,7 +107,7 @@ class PCPBCCModule(PCPBCCBase):
         return True, self.items
 
     def reset_cache(self):
-        """ Reset internal cache """
+        """ Reset internal cache """dsff
         self.cache = {}
         self.insts = {}
 

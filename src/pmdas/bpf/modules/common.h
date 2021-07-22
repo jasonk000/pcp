@@ -9,9 +9,9 @@
 #include "vmlinux_cut.h"
 
 /* bpf kernel-side */
-#include <bpf_core_read.h>
-#include <bpf_helpers.h>
-#include <bpf_tracing.h>
+#include <bpf/bpf_core_read.h>
+#include <bpf/bpf_helpers.h>
+#include <bpf/bpf_tracing.h>
 
 /* create new element or update existing */
 #define BPF_ANY       0

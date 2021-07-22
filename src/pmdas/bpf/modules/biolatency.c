@@ -10,11 +10,6 @@ pmdaInstid biolatency_instances[NUM_LATENCY_SLOTS];
 
 int biolatency_fd = -1;
 
-char * biolatency_name()
-{
-    return "biolatency";
-}
-
 unsigned int biolatency_metric_count()
 {
     return 1;
@@ -25,12 +20,7 @@ unsigned int biolatency_indom_count()
     return 1;
 }
 
-unsigned int biolatency_cluster()
-{
-    return BIOLATENCY_CLUSTER;
-}
-
-void biolatency_register(pmdaMetric *metrics, pmdaIndom *indoms)
+void biolatency_register(unsigned int cluster_id, pmdaMetric *metrics, pmdaIndom *indoms)
 {
     // must match PMNS
 
@@ -38,7 +28,7 @@ void biolatency_register(pmdaMetric *metrics, pmdaIndom *indoms)
     metrics[0] = (struct pmdaMetric)
         { /* m_user */ NULL,
             { /* m_desc */
-                PMDA_PMID(BIOLATENCY_CLUSTER, 0),
+                PMDA_PMID(cluster_id, 0),
                 PM_TYPE_U64,
                 BIOLATENCY_INDOM,
                 PM_SEM_COUNTER,
@@ -143,10 +133,8 @@ int biolatency_fetch_to_atom(unsigned int item, unsigned int inst, pmAtomValue *
 }
 
 struct module bpf_module = {
-    .module_name        = biolatency_name,
     .init               = biolatency_init,
     .register_metrics   = biolatency_register,
-    .cluster            = biolatency_cluster,
     .metric_count       = biolatency_metric_count,
     .indom_count        = biolatency_indom_count,
     .shutdown           = biolatency_shutdown,
