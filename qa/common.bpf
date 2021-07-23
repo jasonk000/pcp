@@ -69,7 +69,7 @@ _pmdabpf_wait_for_metric()
     i=0
     while [ $i -lt $_canwait ]
     do
-	grep -q 'Info: module initialized' $PCP_LOG_DIR/pmcd/bpf.log && break
+	grep -q 'Info: bpf pmda init complete' $PCP_LOG_DIR/pmcd/bpf.log && break
 	sleep 1
 	i=`expr $i + 1`
     done

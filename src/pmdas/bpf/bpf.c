@@ -437,7 +437,10 @@ bpf_init(pmdaInterface *dp)
     bpf_setrlimit();
     libbpf_set_print(bpf_printfn);
 
+    pmNotifyErr(LOG_INFO, "loading modules");
     bpf_load_modules(config);
+
+    pmNotifyErr(LOG_INFO, "registering metrics");
     bpf_register_module_metrics();
 
     // set up PMDA callbacks
@@ -449,7 +452,10 @@ bpf_init(pmdaInterface *dp)
 
     pmdaInit(dp, indomtab, indom_count, metrictab, metric_count);
 
+    pmNotifyErr(LOG_INFO, "setting up namespace");
     bpf_setup_pmns();
+
+    pmNotifyErr(LOG_INFO, "bpf pmda init complete");
 }
 
 /*

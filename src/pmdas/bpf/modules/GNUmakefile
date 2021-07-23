@@ -7,17 +7,10 @@ BPF_MODULES = biolatency.bpf.o runqlat.bpf.o
 MODULETMP = $(PCP_PMDAS_DIR)/$(IAM)/modules
 MODULEDIR = $(PCP_PMDASADM_DIR)/$(IAM)/modules
 
-default_pcp default:	$(MODULES) $(BPF_MODULES)
-
-include $(BUILDRULES)
-
 $(eval $(shell grep ^VERSION_ID= /etc/os-release))
 $(eval $(shell grep ^ID= /etc/os-release))
 
-install_pcp install:	default
-	$(INSTALL) -m 755 -d $(MODULEDIR)
-	$(INSTALL) -m 755 -d $(MODULETMP)
-	$(INSTALL) -m 644 -t $(MODULETMP) $(MODULES) $(BPF_MODULES) $(MODULEDIR)
+include $(BUILDRULES)
 
 # Use the clang pipeline to emit LLVM to LLD and emit BPF straight to an ELF .o.
 # The GCC pipeline has parts of this but not completely, and in any case, likely
@@ -47,6 +40,12 @@ endif
 %.so: %.o module_helpers.o
 	$(LINK.c) -lbpf -shared $^ -o $@
 
+default_pcp default:	$(MODULES) $(BPF_MODULES)
+
+install_pcp install:	default
+	$(INSTALL) -m 755 -d $(MODULEDIR)
+	$(INSTALL) -m 755 -d $(MODULETMP)
+	$(INSTALL) -m 644 -t $(MODULETMP) $(MODULES) $(BPF_MODULES) $(MODULEDIR)
+
 clean::
 	rm -f $(MODULES) $(BPF_MODULES)
-
